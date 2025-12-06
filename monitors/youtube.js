@@ -2,15 +2,22 @@ const { exec } = require('child_process');
 const createLogger = require('../utils/logger');
 const logger = createLogger('YouTube');
 
-async function checkYouTube(account) {
+/**
+ * Fetches the latest video data from a given URL using yt-dlp.
+ * @param {string} url - The URL to check (channel or shorts feed).
+ * @returns {Promise<Object|null>} - The latest video object or null if not found/error.
+ */
+function fetchLatest(url) {
   return new Promise((resolve) => {
-    // yt-dlp can handle various YouTube URLs (channel, user, custom URL, etc.)
-    // We use --playlist-end 1 to get only the latest video from the channel/user feed.
-    const command = `yt-dlp -j --playlist-end 1 "${account.url}"`; 
+    // --flat-playlist might be faster but provides less info. 
+    // -j provides full info for the first item.
+    const command = `yt-dlp -j --playlist-end 1 "${url}"`;
     
     exec(command, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
       if (error) {
-        logger.error(`Error checking ${account.url} (yt-dlp): ${error.message}`);
+        // This is expected if the channel has no shorts, or url is invalid.
+        // We log only on verbose or if strictly necessary, to avoid noise.
+        // logger.debug(`yt-dlp error for ${url}: ${error.message}`);
         resolve(null);
         return;
       }
@@ -18,36 +25,70 @@ async function checkYouTube(account) {
       try {
         const lines = stdout.trim().split('\n');
         if (lines.length === 0) {
-            logger.info(`No videos found for ${account.url}`);
-            resolve(null);
-            return;
+          resolve(null);
+          return;
         }
 
-        // Parse the first (and only) JSON object
+        // Parse the first JSON object
         const latestVideoData = JSON.parse(lines[0]);
         
-        const latestId = latestVideoData.id;
-        const latestUrl = latestVideoData.webpage_url || `https://www.youtube.com/watch?v=${latestId}`;
-        const title = latestVideoData.title;
-        const author = latestVideoData.uploader;
-
-        if (latestId && latestId !== account.last_video_id) {
-          resolve({
-            id: latestId,
-            url: latestUrl,
-            title: title,
-            author: author
-          });
-        } else {
-          resolve(null);
-        }
+        resolve({
+          id: latestVideoData.id,
+          url: latestVideoData.webpage_url || `https://www.youtube.com/watch?v=${latestVideoData.id}`,
+          title: latestVideoData.title,
+          author: latestVideoData.uploader,
+          timestamp: latestVideoData.timestamp || 0 // Use 0 if missing to allow safe comparison
+        });
 
       } catch (e) {
-        logger.error(`Error parsing yt-dlp output for ${account.url}: ${e.message}`);
+        logger.error(`Error parsing yt-dlp output for ${url}: ${e.message}`);
         resolve(null);
       }
     });
   });
+}
+
+async function checkYouTube(account) {
+  // Use account_id to construct canonical URLs if available, otherwise fallback to stored URL
+  let mainUrl = account.url;
+  let shortsUrl = null;
+
+  if (account.account_id) {
+    mainUrl = `https://www.youtube.com/channel/${account.account_id}`;
+    shortsUrl = `https://www.youtube.com/channel/${account.account_id}/shorts`;
+  } else {
+    // Fallback logic: Try to append /shorts to the user URL
+    // Strip trailing slash
+    const base = account.url.endsWith('/') ? account.url.slice(0, -1) : account.url;
+    shortsUrl = `${base}/shorts`;
+  }
+
+  // Fetch both concurrently
+  const [video, short] = await Promise.all([
+    fetchLatest(mainUrl),
+    fetchLatest(shortsUrl)
+  ]);
+
+  // Determine the absolute latest content
+  let latest = null;
+
+  if (video && short) {
+    // Compare timestamps to find the newest
+    latest = (video.timestamp > short.timestamp) ? video : short;
+  } else {
+    latest = video || short;
+  }
+
+  if (latest && latest.id !== account.last_video_id) {
+    return {
+      id: latest.id,
+      url: latest.url,
+      title: latest.title,
+      author: latest.author
+    };
+  } else {
+    return null;
+  }
 }
 
 module.exports = { check: checkYouTube };

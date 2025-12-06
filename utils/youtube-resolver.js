@@ -14,7 +14,8 @@ async function resolveChannelId(url) {
 
   // Otherwise, use yt-dlp to resolve the channel ID.
   return new Promise((resolve) => {
-    const command = `yt-dlp --print channel_id "${url}"`;
+    // --playlist-end 1 ensures we don't process too much if it's treated as a feed
+    const command = `yt-dlp --print channel_id --playlist-end 1 "${url}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
       if (error) {
@@ -23,7 +24,8 @@ async function resolveChannelId(url) {
         return;
       }
       
-      const channelId = stdout.trim();
+      // Take the first line and trim it
+      const channelId = stdout.trim().split('\n')[0].trim();
       if (channelId) {
         resolve(channelId);
       } else {
