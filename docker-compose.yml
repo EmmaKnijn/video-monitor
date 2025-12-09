@@ -1,0 +1,9 @@
+services:
+  monitor-bot:
+    image: video-monitor
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=your_bot_token_here
+      - CLIENT_ID=your_client_id_here
+    volumes:
+      - ./data:/app/data

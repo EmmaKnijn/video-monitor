@@ -1,0 +1,4 @@
+node_modules
+.env
+monitors.db
+monitors.db-journal

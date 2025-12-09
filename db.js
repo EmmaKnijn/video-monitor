@@ -1,5 +1,10 @@
 const Database = require('better-sqlite3');
-const db = new Database('monitors.db');
+const fs = require('node:fs');
+if (fs.existsSync('data') === false) {
+  fs.mkdirSync('data');
+}
+
+const db = new Database('data/monitors.db');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS accounts (
