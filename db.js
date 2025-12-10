@@ -13,8 +13,13 @@ db.exec(`
     url TEXT NOT NULL,
     account_id TEXT,
     guild_id TEXT NOT NULL,
-    discord_channel_id TEXT NOT NULL,
-    last_video_id TEXT
+    discord_channel_id TEXT NOT NULL
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS seen_videos (
+    video_id TEXT PRIMARY KEY
   );
 `);
 
@@ -33,8 +38,13 @@ module.exports = {
   getAccountsByPlatform: (platform) => {
     return db.prepare('SELECT * FROM accounts WHERE platform = ?').all();
   },
-  updateLastVideo: (id, videoId) => {
-    const stmt = db.prepare('UPDATE accounts SET last_video_id = ? WHERE id = ?');
-    stmt.run(videoId, id);
+  addSeenVideo: (videoId) => {
+    const stmt = db.prepare('INSERT OR IGNORE INTO seen_videos (video_id) VALUES (?)');
+    return stmt.run(videoId);
+  },
+  hasSeenVideo: (videoId) => {
+    const stmt = db.prepare('SELECT video_id FROM seen_videos WHERE video_id = ?');
+    const result = stmt.get(videoId);
+    return !!result;
   }
 };

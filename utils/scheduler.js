@@ -13,12 +13,14 @@ const monitors = {
   facebook
 };
 
+const ongoingChecks = new Set();
+
 function startScheduler(client) {
   // Run immediately on start? Maybe wait 10s.
   setTimeout(() => runCycle(client), 10 * 1000);
   
   // Schedule every 2 minutes
-  setInterval(() => runCycle(client), 2 * 60 * 1000);
+  setInterval(() => runCycle(client), 2 * 10 * 1000);
 }
 
 async function runCycle(client) {
@@ -42,32 +44,53 @@ async function runCycle(client) {
 }
 
 async function checkAccount(client, account) {
-  const monitor = monitors[account.platform];
-  if (!monitor) {
-    logger.error(`No monitor found for platform: ${account.platform}`);
+  if (ongoingChecks.has(account.id)) {
+    logger.info(`Check for account ${account.id} is already in progress. Skipping.`);
     return;
   }
 
-  try {
-    const result = await monitor.check(account);
-    if (result) {
-      logger.info(`New video found for ${account.url}: ${result.url}`);
-      
-      // Update DB
-      db.updateLastVideo(account.id, result.id);
+  ongoingChecks.add(account.id);
 
-      // Send Notification
-      const channel = await client.channels.fetch(account.discord_channel_id).catch(() => null);
-      if (channel) {
-        await channel.send({
-          content: `**New Upload!** 🎥\n**Author:** ${result.author}\n**Title:** ${result.title || 'No Title'}\n**Link:** ${result.url}`
-        });
-      } else {
-        logger.error(`Could not find Discord channel ${account.discord_channel_id}`);
+  try {
+    const monitor = monitors[account.platform];
+    if (!monitor) {
+      logger.error(`No monitor found for platform: ${account.platform}`);
+      return;
+    }
+
+    const results = await monitor.check(account);
+
+    if (Array.isArray(results) && results.length > 0) {
+      for (const result of results) {
+        if (!db.hasSeenVideo(result.id)) {
+          logger.info(`New video found for ${account.url}: ${result.url}`);
+          await sendNotification(client, account, result);
+          db.addSeenVideo(result.id);
+        }
+      }
+    } else if (results && !Array.isArray(results)) {
+      // Backward compatibility for monitors that don't return an array
+      if (!db.hasSeenVideo(results.id)) {
+        logger.info(`New video found for ${account.url}: ${results.url}`);
+        await sendNotification(client, account, results);
+        db.addSeenVideo(results.id);
       }
     }
   } catch (error) {
     logger.error(`Error checking account ${account.id}: ${error.message}`);
+  } finally {
+    ongoingChecks.delete(account.id);
+  }
+}
+
+async function sendNotification(client, account, result) {
+  const channel = await client.channels.fetch(account.discord_channel_id).catch(() => null);
+  if (channel) {
+    await channel.send({
+      content: `**New Upload!** 🎥\n**Author:** ${result.author}\n**Title:** ${result.title || 'No Title'}\n**Link:** ${result.url}`
+    });
+  } else {
+    logger.error(`Could not find Discord channel ${account.discord_channel_id}`);
   }
 }
 
