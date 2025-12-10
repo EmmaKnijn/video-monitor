@@ -1,37 +1,43 @@
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const createLogger = require('./logger');
 const logger = createLogger('YouTubeResolver');
 
+/**
+ * Resolves a YouTube channel ID from a URL using yt-dlp.
+ * 
+ * @param {string} url - The YouTube URL.
+ * @returns {Promise<string|null>} - The Channel ID or null.
+ */
 async function resolveChannelId(url) {
-  // If it already contains 'channel/', extract it. This is a quick path.
+  // Optimization: If the URL already contains '/channel/', extract the ID directly.
   if (url.includes('/channel/')) {
     const parts = url.split('/');
     const index = parts.indexOf('channel');
     if (index !== -1 && parts[index + 1]) {
+      // Return the segment immediately after 'channel'
       return parts[index + 1];
     }
   }
 
-  // Otherwise, use yt-dlp to resolve the channel ID.
+  // Use yt-dlp to resolve the channel ID securely.
   return new Promise((resolve) => {
-    // --playlist-end 1 ensures we don't process too much if it's treated as a feed
-    const command = `yt-dlp --print channel_id --playlist-end 1 "${url}"`;
+    const args = ['--print', 'channel_id', '--playlist-end', '1', url];
 
-    exec(command, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
+    execFile('yt-dlp', args, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         logger.error(`Error resolving YouTube ID with yt-dlp for ${url}: ${error.message}`);
-        resolve(null);
-        return;
+        return resolve(null);
       }
       
-      // Take the first line and trim it
-      const channelId = stdout.trim().split('\n')[0].trim();
-      if (channelId) {
-        resolve(channelId);
-      } else {
-        logger.error(`yt-dlp did not return a channel ID for ${url}.`);
-        resolve(null);
+      const output = stdout.trim();
+      if (!output) {
+        logger.warn(`yt-dlp returned empty output for ${url}`);
+        return resolve(null);
       }
+
+      // Take the first line and trim it
+      const channelId = output.split('\n')[0].trim();
+      resolve(channelId || null);
     });
   });
 }

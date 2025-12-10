@@ -1,39 +1,44 @@
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const createLogger = require('../utils/logger');
 const logger = createLogger('TikTok');
 
+/**
+ * Fetches the latest TikTok video using yt-dlp.
+ * @param {string} url 
+ * @returns {Promise<Object|null>}
+ */
 function fetchLatest(url) {
   return new Promise((resolve) => {
-    const command = `yt-dlp -j --playlist-end 1 "${url}"`;
+    // yt-dlp arguments
+    const args = ['-j', '--playlist-end', '1', url];
     
-    exec(command, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
+    execFile('yt-dlp', args, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
-        logger.error(`Error checking ${url} (yt-dlp): ${error.message}`);
-        resolve(null);
-        return;
+        // TikTok scraping often fails or returns non-zero on some conditions.
+        logger.debug(`yt-dlp error for ${url}: ${error.message}`);
+        return resolve(null);
       }
 
       try {
         const lines = stdout.trim().split('\n').filter(line => line.trim() !== '');
         if (lines.length === 0) {
-            logger.info(`No videos found for ${url}`);
-            resolve(null);
-            return;
+            return resolve(null);
         }
 
         const data = JSON.parse(lines[0]);
+        
+        // Extract relevant data
         return resolve({
             id: data.id || data.display_id,
             url: data.webpage_url || data.url,
             title: data.title || 'New TikTok Video',
-            author: data.uploader || url.split('@')[1] || 'Unknown',
+            author: data.uploader || (url.includes('@') ? url.split('@')[1].split('/')[0] : 'Unknown'),
             timestamp: data.timestamp || 0
         });
-        
 
       } catch (e) {
         logger.error(`Error parsing yt-dlp output for ${url}: ${e.message}`);
-        resolve(null);
+        return resolve(null);
       }
     });
   });
@@ -41,11 +46,7 @@ function fetchLatest(url) {
 
 async function checkTikTok(account) {
   const latestVideo = await fetchLatest(account.url);
-
-  if (latestVideo) {
-    return [latestVideo]; // Return as an array for scheduler consistency
-  }
-  return null;
+  return latestVideo ? [latestVideo] : null;
 }
 
 module.exports = { check: checkTikTok };

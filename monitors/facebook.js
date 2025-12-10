@@ -1,21 +1,18 @@
 const { runWithPage } = require('../utils/browser');
+const createLogger = require('../utils/logger');
+const logger = createLogger('Facebook');
 
 async function checkFacebook(account) {
   return runWithPage(async (page) => {
     try {
-      let url = account.url;
-      // Ensure we are on the reels tab if possible, though /reels might not work for all page types (e.g. profiles vs pages)
-      // Safest is to just visit the provided URL and look for reels if the user provided a reels link, 
-      // or try to find the reels tab. 
-      // For simplicity, we assume the user provides the link to the Reels section or the main page.
+      // Facebook structure is complex. We assume the URL points to a page where reels are visible.
+      await page.goto(account.url, { waitUntil: 'networkidle' });
       
-      await page.goto(url, { waitUntil: 'networkidle' });
-      
-      // Look for reel links.
       const selector = 'a[href*="/reel/"]';
       try {
           await page.waitForSelector(selector, { timeout: 10000 });
       } catch (e) {
+          logger.debug(`No reels found for ${account.url} (timeout).`);
           return null;
       }
 
@@ -24,26 +21,23 @@ async function checkFacebook(account) {
 
       const latestLink = links[0];
       
-      // Extract ID. FB IDs are usually numeric or complex strings.
-      // We'll use the whole link as ID if we can't parse, or a hash of it.
-      // But usually the link is unique enough.
-      // https://www.facebook.com/reel/123456...
+      // Extract numeric ID if possible
       const match = latestLink.match(/\/reel\/(\d+)/);
       const latestId = match ? match[1] : latestLink;
 
-      if (latestId !== account.last_video_id) {
-         return {
-          id: latestId,
-          url: latestLink,
-          title: 'New Facebook Reel',
-          author: 'Unknown' 
-        };
-      }
+      const result = {
+        id: latestId,
+        url: latestLink,
+        title: 'New Facebook Reel',
+        author: 'Unknown' 
+      };
+      
+      return [result];
 
     } catch (error) {
-      console.error(`[Facebook] Error checking ${account.url}:`, error.message);
+      logger.error(`Error checking ${account.url}: ${error.message}`);
+      return null;
     }
-    return null;
   });
 }
 
