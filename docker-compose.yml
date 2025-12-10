@@ -3,7 +3,7 @@ services:
     image: video-monitor
     restart: unless-stopped
     environment:
-      - BOT_TOKEN=your_bot_token_here
+      - DISCORD_TOKEN=your_bot_token_here
       - CLIENT_ID=your_client_id_here
     volumes:
       - ./data:/app/data
