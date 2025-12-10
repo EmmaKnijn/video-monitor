@@ -15,8 +15,8 @@ const monitors = {
 };
 
 const ongoingChecks = new Set();
-// Check every 20 seconds
-const CHECK_INTERVAL = 1 * 20 * 1000; 
+
+const CHECK_INTERVAL = 2 * 60 * 1000; 
 
 function startScheduler(client) {
   logger.info(`Scheduler started. Interval: ${CHECK_INTERVAL / 1000}s`);
